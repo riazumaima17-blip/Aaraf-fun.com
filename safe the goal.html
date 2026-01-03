@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Tiny Pong – Two Player</title>
+  <style>
+    html,body { height:100%; margin:0; background:#0b0f1a; color:#ddd; font-family:system-ui,Segoe UI,Roboto,Arial; display:flex; align-items:center; justify-content:center; }
+    canvas { background: linear-gradient(180deg,#071026,#081428); box-shadow: 0 8px 30px rgba(0,0,0,.6); border-radius:8px; }
+    .info { position: absolute; top:12px; left:12px; font-size:13px; opacity:.9; }
+    .center-msg { position:absolute; text-align:center; width:100%; top:40%; font-size:18px; color:#9fb7ff; pointer-events:none; }
+    button { margin-top:6px; padding:6px 10px; border-radius:6px; border:none; background:#2b6cff; color:white; cursor:pointer; }
+  </style>
+</head>
+<body>
+  <div class="info">P1: W/S • P2: ↑/↓ • Space = Start/Pause • First to 7 wins</div>
+  <div class="center-msg" id="centerMsg">Press <strong>Space</strong> to start</div>
+  <canvas id="c" width="900" height="500"></canvas>
+
+<script>
+(() => {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+
+  const W = canvas.width, H = canvas.height;
+  const paddleW = 14, paddleH = 100;
+  const speed = 6;
+  const ballSize = 12;
+  const maxScore = 7;
+
+  let leftPaddle = { x: 30, y: (H-paddleH)/2, dy: 0, score: 0 };
+  let rightPaddle = { x: W - 30 - paddleW, y: (H-paddleH)/2, dy: 0, score: 0 };
+  let ball = { x: W/2, y: H/2, vx: 0, vy: 0 };
+  let running = false;
+  let paused = false;
+  const centerMsg = document.getElementById('centerMsg');
+
+  function startRound(servingRight = Math.random() > 0.5) {
+    ball.x = W/2;
+    ball.y = H/2;
+    const angle = (Math.random() * 0.6 - 0.3);
+    const baseSpeed = 5 + Math.random()*1.5;
+    ball.vx = (servingRight ? 1 : -1) * baseSpeed * Math.cos(angle);
+    ball.vy = baseSpeed * Math.sin(angle);
+  }
+
+  function resetGame() {
+    leftPaddle.score = 0;
+    rightPaddle.score = 0;
+    startRound(Math.random() > 0.5);
+  }
+
+  // rounded rectangles
+  function drawRoundedRect(x,y,w,h,r){
+    ctx.beginPath();
+    ctx.moveTo(x+r,y);
+    ctx.arcTo(x+w,y,x+w,y+h,r);
+    ctx.arcTo(x+w,y+h,x,y+h,r);
+    ctx.arcTo(x,y+h,x,y,r);
+    ctx.arcTo(x,y,x+w,y,r);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  function draw() {
+    ctx.clearRect(0,0,W,H);
+
+    // dashed center
+    ctx.fillStyle = 'rgba(255,255,255,0.06)';
+    for(let y=20;y<H;y+=28) ctx.fillRect(W/2 - 2, y, 4, 18);
+
+    // scores
+    ctx.fillStyle = '#9fb7ff';
+    ctx.font = '48px system-ui,Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(leftPaddle.score, W*0.25, 70);
+    ctx.fillText(rightPaddle.score, W*0.75, 70);
+
+    // paddles
+    ctx.fillStyle = '#dff3ff';
+    drawRoundedRect(leftPaddle.x, leftPaddle.y, paddleW, paddleH, 8);
+    drawRoundedRect(rightPaddle.x, rightPaddle.y, paddleW, paddleH, 8);
+
+    // ball
+    ctx.fillStyle = '#ffd89b';
+    drawRoundedRect(ball.x - ballSize/2, ball.y - ballSize/2, ballSize, ballSize, 4);
+  }
+
+  function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
+
+  function update() {
+    if(!running || paused) return;
+
+    // PLAYER 1 (left)
+    leftPaddle.y += leftPaddle.dy;
+    leftPaddle.y = clamp(leftPaddle.y, 8, H - paddleH - 8);
+
+    // PLAYER 2 (right) — NO AI ANYMORE
+    rightPaddle.y += rightPaddle.dy;
+    rightPaddle.y = clamp(rightPaddle.y, 8, H - paddleH - 8);
+
+    // Ball movement
+    ball.x += ball.vx;
+    ball.y += ball.vy;
+
+    // wall collisions
+    if (ball.y - ballSize/2 < 4) { ball.vy *= -1; ball.y = ballSize/2 + 4; }
+    if (ball.y + ballSize/2 > H - 4) { ball.vy *= -1; ball.y = H - ballSize/2 - 4; }
+
+    // bounding box check
+    function hit(p) {
+      return !(
+        ball.x + ballSize/2 < p.x ||
+        ball.x - ballSize/2 > p.x + paddleW ||
+        ball.y + ballSize/2 < p.y ||
+        ball.y - ballSize/2 > p.y + paddleH
+      );
+    }
+
+    // paddle collisions
+    if (ball.vx < 0 && hit(leftPaddle)) {
+      const hitPos = (ball.y - (leftPaddle.y + paddleH/2)) / (paddleH/2);
+      ball.vx = -ball.vx * 1.06;
+      ball.vy += hitPos * 4;
+      ball.x = leftPaddle.x + paddleW + ballSize/2;
+    } else if (ball.vx > 0 && hit(rightPaddle)) {
+      const hitPos = (ball.y - (rightPaddle.y + paddleH/2)) / (paddleH/2);
+      ball.vx = -ball.vx * 1.06;
+      ball.vy += hitPos * 4;
+      ball.x = rightPaddle.x - ballSize/2;
+    }
+
+    // scoring
+    if (ball.x < -50) {
+      rightPaddle.score++;
+      if (rightPaddle.score >= 7) {
+        running = false;
+        centerMsg.innerHTML = 'Player 2 wins!<br><button onclick="restart()">Play again</button>';
+        centerMsg.style.display = 'block';
+      } else startRound(true);
+    }
+    if (ball.x > W + 50) {
+      leftPaddle.score++;
+      if (leftPaddle.score >= 7) {
+        running = false;
+        centerMsg.innerHTML = 'Player 1 wins!<br><button onclick="restart()">Play again</button>';
+        centerMsg.style.display = 'block';
+      } else startRound(false);
+    }
+  }
+
+  // input
+  window.addEventListener('keydown', e => {
+    // Player 1
+    if(e.key === 'w' || e.key === 'W') leftPaddle.dy = -speed;
+    if(e.key === 's' || e.key === 'S') leftPaddle.dy = speed;
+
+    // Player 2
+    if(e.key === 'ArrowUp') rightPaddle.dy = -speed;
+    if(e.key === 'ArrowDown') rightPaddle.dy = speed;
+
+    // Space = pause/start
+    if (e.code === 'Space') {
+      if (!running) {
+        running = true; paused = false;
+        centerMsg.style.display = 'none';
+        startRound();
+      } else {
+        paused = !paused;
+        centerMsg.style.display = paused ? 'block' : 'none';
+        centerMsg.innerHTML = paused ? 'Paused<br>Press Space to resume' : '';
+      }
+    }
+  });
+
+  window.addEventListener('keyup', e => {
+    if(['w','W','s','S'].includes(e.key)) leftPaddle.dy = 0;
+    if(['ArrowUp','ArrowDown'].includes(e.key)) rightPaddle.dy = 0;
+  });
+
+  // restart button
+  window.restart = () => {
+    resetGame();
+    running = true;
+    paused = false;
+    centerMsg.style.display = 'none';
+  };
+
+  function frame() { update(); draw(); requestAnimationFrame(frame); }
+  draw(); frame();
+
+})();
+</script>
+<a href="index .html">index .html</a>
+</body>
+</html>
